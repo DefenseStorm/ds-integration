@@ -1,0 +1,11 @@
+# conf file must be in same directory as script
+
+[cef]
+VENDOR = template
+PRODUCT = EventLogs
+VERSION = 1.0
+SEVERITY = 5
+CEF_VERSION = CEF:0
+
+
+

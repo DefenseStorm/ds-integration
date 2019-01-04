@@ -1,0 +1,127 @@
+
+
+import sys
+sys.path.insert(0, '/usr/local/bin/pylib')
+sys.path.insert(0, '/usr/local/bin')
+sys.path.insert(0, '/etc/syslog-ng')
+
+import json
+import time
+from datetime import datetime
+import calendar
+import subprocess
+import logging
+import logging.handlers
+import ConfigParser
+
+class DefenseStorm(object):
+    def __init__(self, integration, log_level='INFO', testing=False, send_syslog=False, config_file=None):
+
+        '''
+        integration -- System/Solution integrating with.
+                       This is used:
+                           - app_name for logging ( ds-<integration> )
+                           - integration.conf for config values
+        '''
+        self.integration = integration
+
+        self.testing = testing
+        self.send_syslog = send_syslog
+        self.events_file = None
+
+        self.start = time.time()
+
+        self.count = 0
+
+        self.logger = logging.getLogger(self.integration)
+        self.logger.setLevel(logging.getLevelName(log_level))
+        #Set handler to local syslog and facility local7
+        handler = logging.handlers.SysLogHandler('/dev/log', facility=22)
+        formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
+        handler.formatter = formatter
+        self.logger.addHandler(handler)
+
+        self.event_logger = logging.getLogger(self.integration + 'events')
+        self.event_logger.setLevel(logging.getLevelName(log_level))
+        #Set handler to local syslog and facility local7
+        event_handler = logging.handlers.SysLogHandler('/dev/log', facility=23)
+        event_formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
+        event_handler.formatter = event_formatter
+        self.event_logger.addHandler(event_handler)
+
+        if self.testing == False:
+            self.log('INFO', 'Starting run')
+        else:
+            timestamp = str(calendar.timegm(time.gmtime()))
+            self.log('INFO', 'Starting run in test mode.  Data will be written locally to output.' + timestamp)
+            self.events_file = open('output.' + timestamp, 'w')
+
+        if config_file == None:
+            self.config_file = self.integration + ".conf"
+        else:
+            self.config_file = config_file
+
+        self.config = ConfigParser.ConfigParser()
+        self.log('INFO', 'Reading config file ' + self.config_file)
+        try:
+            self.config.read(self.config_file)
+        except Exception ,e:
+            traceback.print_exc()
+            try:
+                self.ds.log('ERROR', 'ERROR: ' + str(e))
+            except:
+                pass
+
+
+
+
+    def __del__(self):
+        end = time.time()
+        secs = end - self.start
+        self.log('INFO', 'Completed run of %d events in: %0.2f seconds' %(self.count, secs))
+
+    def writeEvent(self, message):
+        if self.testing == True:
+            self.events_file.write(message + '\n')
+        else:
+            self.event_logger.info(message)
+        self.count +=1
+
+    def writeCEFEvent(self, cef_version='', vendor='', product='', version='', type='', action='', severity='', dataDict={}):
+
+        if cef_version == '':
+            cef_version = self.config_get('cef', 'CEF_VERSION')
+        if vendor == '':
+            vendor = self.config_get('cef', 'VENDOR')
+        if product == '':
+            product = self.config_get('cef', 'PRODUCT')
+        if version == '':
+            version = self.config_get('cef', 'VERSION')
+        if severity == '':
+            severity = self.config_get('cef', 'SEVERITY')
+
+        header = '|'.join([cef_version, vendor, product, version,
+            type, action, severity]) + '|'
+        extension = []
+        for key in dataDict.keys():
+            extension.extend([key + '=' + dataDict[key]])
+        msg = header + ' '.join(extension)
+        self.writeEvent(msg)
+
+    def log(self, level='INFO', msg=''):
+        if self.send_syslog == True:
+            if level == 'INFO':
+                self.logger.info(msg)
+            elif level == 'WARNING':
+                self.logger.warning(msg)
+            elif level == 'ERROR':
+                self.logger.error(msg)
+            elif level == 'CRITICAL':
+                self.logger.critical(msg)
+            elif level == 'DEBUG':
+                self.logger.debug(msg)
+        else:
+            print "%s: %s" %(level, msg)
+
+    def config_get(self, section, value):
+        return self.config.get(section, value)
