@@ -15,6 +15,9 @@ import logging.handlers
 import ConfigParser
 
 class DefenseStorm(object):
+
+
+
     def __init__(self, integration, log_level='INFO', testing=False, send_syslog=False, config_file=None):
 
         '''
@@ -23,6 +26,8 @@ class DefenseStorm(object):
                            - app_name for logging ( ds-<integration> )
                            - integration.conf for config values
         '''
+        self.CEF_custom_field_list = ['cs1','cs2','cs3','cs4','cs5','cs6','cn1','cn2','cn3','flexDate1','flexString1','flexString2']
+
         self.integration = integration
 
         self.testing = testing
@@ -87,7 +92,7 @@ class DefenseStorm(object):
             self.event_logger.info(message)
         self.count +=1
 
-    def writeCEFEvent(self, cef_version='', vendor='', product='', version='', type='', action='', severity='', dataDict={}):
+    def writeCEFEvent(self, cef_version='', vendor='', product='', version='', type='', action='', severity='', dataDict={}, CEF_field_mappings=None, CEF_custom_field_labels=None):
 
         if cef_version == '':
             cef_version = self.config_get('cef', 'CEF_VERSION')
@@ -100,12 +105,40 @@ class DefenseStorm(object):
         if severity == '':
             severity = self.config_get('cef', 'SEVERITY')
 
+        extension = {}
+
+        if (CEF_field_mappings != None) and (CEF_custom_field_labels != None):
+            for item in dataDict.keys():
+                if item in CEF_field_mappings.keys():
+                    if CEF_field_mappings[item] != None:
+                        if CEF_field_mappings[item] == 'action':
+                            action = str(dataDict[item])
+                        elif CEF_field_mappings[item] == 'severity':
+                            severity = str(dataDict[item])
+                        elif CEF_field_mappings[item] == 'name':
+                            name = str(dataDict[item])
+                        else:
+                            extension[CEF_field_mappings[item]] = str(dataDict[item])
+                    if CEF_field_mappings[item] in self.CEF_custom_field_list:
+                        extension[CEF_field_mappings[item] + 'Label'] = CEF_custom_field_labels[CEF_field_mappings[item] + 'Label']
+                    del dataDict[item]
+        First = True
+        msg = ""
+        for item in dataDict.keys():
+            if First:
+                msg += "%s\=%s" %(item, dataDict[item])
+            else:
+                msg += " %s\=%s" %(item, dataDict[item])
+
+        extension['msg'] = msg
+        extension_list = []
+
+        for key in extension.keys():
+            extension_list.extend([key + '=' + extension[key]])
+
         header = '|'.join([cef_version, vendor, product, version,
-            type, action, severity]) + '|'
-        extension = []
-        for key in dataDict.keys():
-            extension.extend([key + '=' + dataDict[key]])
-        msg = header + ' '.join(extension)
+            name, action, severity]) + '|'
+        msg = header + ' '.join(extension_list)
         self.writeEvent(msg)
 
     def log(self, level='INFO', msg=''):
