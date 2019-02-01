@@ -111,8 +111,8 @@ class DefenseStorm(object):
             for item in dataDict.keys():
                 if item in CEF_field_mappings.keys():
                     if CEF_field_mappings[item] != None:
-                        if CEF_field_mappings[item] == 'action':
-                            action = str(dataDict[item])
+                        if CEF_field_mappings[item] == 'type':
+                            type = str(dataDict[item])
                         elif CEF_field_mappings[item] == 'severity':
                             severity = str(dataDict[item])
                         elif CEF_field_mappings[item] == 'name':
@@ -137,7 +137,7 @@ class DefenseStorm(object):
             extension_list.extend([key + '=' + extension[key]])
 
         header = '|'.join([cef_version, vendor, product, version,
-            name, action, severity]) + '|'
+            type, name, severity]) + '|'
         msg = header + ' '.join(extension_list)
         self.writeEvent(msg)
 
