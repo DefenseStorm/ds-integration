@@ -99,11 +99,13 @@ class DefenseStorm(object):
         json_event['app_name'] = self.config_get('json', 'app_name')
 
         if JSON_field_mappings != None:
-            for item in json_event.keys():
-                if item in JSON_field_mappings.keys():
-                    if JSON_field_mappings[item] != None:
-                        json_event[JSON_field_mappings[item]] = str(json_event[item])
+            for item in JSON_field_mappings.keys():
+                try:
+                    #if item in json_event.keys():
+                    json_event[JSON_field_mappings[item]] = json_event[item]
                     del json_event[item]
+                except KeyError:
+                    pass
 
         if self.testing == True:
             self.events_file.write("DS_INT " + self.config_get('json', 'version') + " " + json.dumps(json_event) + '\n')
