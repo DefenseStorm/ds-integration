@@ -95,8 +95,16 @@ class DefenseStorm(object):
             self.event_logger.info(message)
         self.count +=1
 
-    def writeJSONEvent(self, json_event):
+    def writeJSONEvent(self, json_event, JSON_field_mappings = None):
         json_event['app_name'] = self.config_get('json', 'app_name')
+
+        if JSON_field_mappings != None:
+            for item in json_event.keys():
+                if item in JSON_field_mappings.keys():
+                    if JSON_field_mappings[item] != None:
+                        json_event[JSON_field_mappings[item]] = str(json_event[item])
+                    del json_event[item]
+
         if self.testing == True:
             self.events_file.write("DS_INT " + self.config_get('json', 'version') + " " + json.dumps(json_event) + '\n')
         else:
