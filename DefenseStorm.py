@@ -13,6 +13,8 @@ import subprocess
 import logging
 import logging.handlers
 import ConfigParser
+import os
+import pickle
 
 class DefenseStorm(object):
 
@@ -29,6 +31,7 @@ class DefenseStorm(object):
         self.CEF_custom_field_list = ['cs1','cs2','cs3','cs4','cs5','cs6','cn1','cn2','cn3','flexDate1','flexString1','flexString2']
 
         self.integration = integration
+        self.state_file_name = '/state.obj'
 
         self.testing = testing
         self.send_syslog = send_syslog
@@ -90,6 +93,14 @@ class DefenseStorm(object):
             self.events_file.write(message + '\n')
         else:
             self.event_logger.info(message)
+        self.count +=1
+
+    def writeJSONEvent(self, json_event):
+        json_event['app_name'] = self.config_get('json', 'app_name')
+        if self.testing == True:
+            self.events_file.write("DS_INT " + self.config_get('json', 'version') + " " + json.dumps(json_event) + '\n')
+        else:
+            self.event_logger.info("DS_INT " + self.config_get('json', 'version') + " " + json.dumps(json_event))
         self.count +=1
 
     def writeCEFEvent(self, cef_version='', vendor='', product='', version='', type='', action='', severity='', dataDict={}, CEF_field_mappings=None, CEF_custom_field_labels=None):
@@ -158,3 +169,31 @@ class DefenseStorm(object):
 
     def config_get(self, section, value):
         return self.config.get(section, value)
+
+    def get_state(self, state_dir):
+        state_file_path = state_dir + self.state_file_name
+        try:
+            with open (state_file_path, 'rb') as f:
+                state = pickle.load(f)
+        except:
+            return None
+        return state
+
+    def set_state(self, state_dir, state):
+        state_file_path = state_dir + self.state_file_name
+        if not os.path.exists(state_dir):
+            try:
+                os.makedirs(state_dir)
+            except OSError as e:
+                self.log('ERROR', "Failed to create state dir: %s" %state_dir)
+                return None
+        try:
+            with open(state_file_path, 'wb') as f:
+                pickle.dump(state, f, protocol=2)
+        except:
+                self.log('ERROR', "Failed to save state to %s" %state_file_path)
+        return True
+
+
+
+
