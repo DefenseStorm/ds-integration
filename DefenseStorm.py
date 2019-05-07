@@ -151,7 +151,9 @@ class DefenseStorm(object):
             else:
                 msg += " %s\=%s" %(item, dataDict[item])
 
-        extension['msg'] = msg
+        if msg != "":
+            extension['msg'] = msg
+
         extension_list = []
 
         for key in extension.keys():
