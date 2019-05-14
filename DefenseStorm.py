@@ -96,6 +96,7 @@ class DefenseStorm(object):
         self.count +=1
 
     def writeJSONEvent(self, json_event, JSON_field_mappings = None):
+        json_event = self.flatten_json(json_event)
         json_event['app_name'] = self.config_get('json', 'app_name')
 
         if JSON_field_mappings != None:
@@ -206,6 +207,21 @@ class DefenseStorm(object):
                 self.log('ERROR', "Failed to save state to %s" %state_file_path)
         return True
 
+    def flatten_json(self,y):
+        out = {}
 
+        def flatten(x, name=''):
+            if type(x) is dict:
+                for a in x:
+                    flatten(x[a], name + a + '_')
+            elif type(x) is list:
+                i = 0
+                for a in x:
+                    flatten(a, name + str(i) + '_')
+                i += 1
+            else:
+                out[name[:-1]] = x
 
+        flatten(y)
+        return out
 
