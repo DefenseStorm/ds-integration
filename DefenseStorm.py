@@ -12,7 +12,7 @@ import calendar
 import subprocess
 import logging
 import logging.handlers
-import ConfigParser
+import configparser
 import os
 import pickle
 
@@ -69,11 +69,11 @@ class DefenseStorm(object):
         else:
             self.config_file = config_file
 
-        self.config = ConfigParser.ConfigParser()
+        self.config = configparser.ConfigParser()
         self.log('INFO', 'Reading config file ' + self.config_file)
         try:
             self.config.read(self.config_file)
-        except Exception ,e:
+        except Exception as e:
             traceback.print_exc()
             try:
                 self.ds.log('ERROR', 'ERROR: ' + str(e))
@@ -179,7 +179,7 @@ class DefenseStorm(object):
             elif level == 'DEBUG':
                 self.logger.debug(msg)
         else:
-            print "%s: %s" %(level, msg)
+            print("%s: %s" %(level, msg))
 
     def config_get(self, section, value):
         return self.config.get(section, value)
