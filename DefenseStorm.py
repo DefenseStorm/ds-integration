@@ -95,10 +95,13 @@ class DefenseStorm(object):
             self.event_logger.info(message)
         self.count +=1
 
-    def writeJSONEvent(self, json_event, JSON_field_mappings = None, flatten = True):
+    def writeJSONEvent(self, json_event, JSON_field_mappings = None, flatten = True, app_name = None):
         if flatten == True:
             json_event = self.flatten_json(json_event)
-        json_event['app_name'] = self.config_get('json', 'app_name')
+        if app_name == None:
+            json_event['app_name'] = self.config_get('json', 'app_name')
+        else:
+            json_event['app_name'] = app_name
 
         if JSON_field_mappings != None:
             for item in JSON_field_mappings.keys():
