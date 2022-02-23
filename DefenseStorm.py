@@ -15,6 +15,10 @@ import logging.handlers
 import configparser
 import os
 import pickle
+import requests
+import traceback
+
+from http.cookiejar import Cookie, CookieJar
 
 class DefenseStorm(object):
 
@@ -41,27 +45,53 @@ class DefenseStorm(object):
 
         self.count = 0
 
-        self.logger = logging.getLogger(self.integration)
-        self.logger.setLevel(logging.getLevelName(log_level))
-        #Set handler to local syslog and facility local7
-        handler = logging.handlers.SysLogHandler('/dev/log', facility=22)
-        formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
-        handler.formatter = formatter
-        self.logger.addHandler(handler)
+        self.cookieJar = CookieJar()
+        self.bearer = None
+        self.failure_count = 0
+        self.max_failure_count = 3
 
-        self.event_logger = logging.getLogger(self.integration + 'events')
-        self.event_logger.setLevel(logging.getLevelName(log_level))
-        #Set handler to local syslog and facility local7
-        event_handler = logging.handlers.SysLogHandler('/dev/log', facility=23)
-        event_formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
-        event_handler.formatter = event_formatter
-        self.event_logger.addHandler(event_handler)
+        try:
+            if self.testing == False:
+                self.logger = logging.getLogger()
+                self.set_logLevel(log_level)
+                handler = logging.handlers.SysLogHandler('/dev/log', facility=22)
+                formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
+                handler.formatter = formatter
+                self.logger.addHandler(handler)
+                self.logger.info('Starting run')
+
+                self.event_logger = logging.getLogger(self.integration + 'events')
+                self.event_logger.setLevel(logging.getLevelName(log_level))
+                #Set handler to local syslog and facility local7
+                event_handler = logging.handlers.SysLogHandler('/dev/log', facility=23)
+                event_formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
+                event_handler.formatter = event_formatter
+                self.event_logger.addHandler(event_handler)
+
+                self.logger.info('Starting run')
+            else:
+                self.logger = logging.getLogger()
+                logFormatter = logging.Formatter(fmt='%(levelname)s: %(message)s')
+                formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
+                handler = logging.StreamHandler(sys.stdout)
+                handler.setFormatter(logFormatter)
+                self.logger.addHandler(handler)
+                self.set_logLevel(log_level)
+
+                timestamp = str(calendar.timegm(time.gmtime()))
+                self.logger.info('Starting run in test mode.  Data will be written locally to output.' + timestamp)
+                self.events_file = open('output.' + timestamp, 'w')
+        except:
+            self.logger.error('ERROR: Failed setting up logging')
+            self.logger.error("%s" %(traceback.format_exc().replace('\n',';')))
+
+
 
         if self.testing == False:
-            self.log('INFO', 'Starting run')
+            self.logger.info('Starting run')
         else:
             timestamp = str(calendar.timegm(time.gmtime()))
-            self.log('INFO', 'Starting run in test mode.  Data will be written locally to output.' + timestamp)
+            self.logger.info('Starting run in test mode.  Data will be written locally to output.' + timestamp)
             self.events_file = open('output.' + timestamp, 'w')
 
         if config_file == None:
@@ -70,23 +100,33 @@ class DefenseStorm(object):
             self.config_file = config_file
 
         self.config = configparser.ConfigParser()
-        self.log('INFO', 'Reading config file ' + self.config_file)
+        self.logger.info('Reading config file ' + self.config_file)
         try:
             self.config.read(self.config_file)
         except Exception as e:
             traceback.print_exc()
             try:
-                self.ds.log('ERROR', 'ERROR: ' + str(e))
+                self.ds.logger.error('ERROR: ' + str(e))
             except:
                 pass
-
-
 
 
     def __del__(self):
         end = time.time()
         secs = end - self.start
-        self.log('INFO', 'Completed run of %d events in: %0.2f seconds' %(self.count, secs))
+        self.logger.info('Completed run of %d events in: %0.2f seconds' %(self.count, secs))
+
+    def set_logLevel(self, log_level):
+        if log_level == 'INFO':
+            self.logger.setLevel(logging.INFO)
+        elif log_level == 'WARNING':
+            self.logger.setLevel(logging.WARNING)
+        elif log_level == 'ERROR':
+            self.logger.setLevel(logging.ERROR)
+        elif log_level == 'CRITICAL':
+            self.logger.setLevel(logging.CRITICAL)
+        elif log_level == 'DEBUG':
+            self.logger.setLevel(logging.DEBUG)
 
     def writeEvent(self, message):
         if self.testing == True:
@@ -95,13 +135,10 @@ class DefenseStorm(object):
             self.event_logger.info(message)
         self.count +=1
 
-    def writeJSONEvent(self, json_event, JSON_field_mappings = None, flatten = True, app_name = None):
+    def writeJSONEvent(self, json_event, JSON_field_mappings = None, flatten = True):
         if flatten == True:
             json_event = self.flatten_json(json_event)
-        if app_name == None:
-            json_event['app_name'] = self.config_get('json', 'app_name')
-        else:
-            json_event['app_name'] = app_name
+        json_event['app_name'] = self.config_get('json', 'app_name')
 
         if JSON_field_mappings != None:
             for item in JSON_field_mappings.keys():
@@ -170,21 +207,6 @@ class DefenseStorm(object):
         msg = header + ' '.join(extension_list)
         self.writeEvent(msg)
 
-    def log(self, level='INFO', msg=''):
-        if self.send_syslog == True:
-            if level == 'INFO':
-                self.logger.info(msg)
-            elif level == 'WARNING':
-                self.logger.warning(msg)
-            elif level == 'ERROR':
-                self.logger.error(msg)
-            elif level == 'CRITICAL':
-                self.logger.critical(msg)
-            elif level == 'DEBUG':
-                self.logger.debug(msg)
-        else:
-            print("%s: %s" %(level, msg))
-
     def config_get(self, section, value):
         return self.config.get(section, value)
 
@@ -203,13 +225,13 @@ class DefenseStorm(object):
             try:
                 os.makedirs(state_dir)
             except OSError as e:
-                self.log('ERROR', "Failed to create state dir: %s" %state_dir)
+                self.logger.error("Failed to create state dir: %s" %state_dir)
                 return None
         try:
             with open(state_file_path, 'wb') as f:
                 pickle.dump(state, f, protocol=2)
         except:
-                self.log('ERROR', "Failed to save state to %s" %state_file_path)
+                self.logger.error("Failed to save state to %s" %state_file_path)
         return True
 
     def flatten_json(self,y):
@@ -229,4 +251,103 @@ class DefenseStorm(object):
 
         flatten(y)
         return out
+
+    def requests_get(self, url, auth = None, headers = {}, data = None, params = None, cookies = None, ssl_verify= True, proxies = None):
+        if self.bearer != None:
+            if 'Authorization' in headers.keys():
+                self.logger.warning( "Received unexpected Authorization field in provided headers when bearer not none.  Overwriting")
+            headers['Authorization'] = 'Bearer '+ self.bearer
+        try:
+            response = requests.get(url, auth=self.basic_auth, headers=headers, data=data, params = params, cookies = cookies, timeout=15, verify=ssl_verify, proxies = proxies)
+        except Exception as e:
+            self.failure_count += 1
+            if self.failure_count < self.max_failure_count:
+                self.logger.warn("Failure %d of %d" %(self.failure_count, self.max_failure_count))
+                self.logger.warn("Exception {0}".format(str(e)))
+            else:
+                self.logger.error("Failure %d of %d" %(self.failure_count, self.max_failure_count))
+                self.logger.error("Exception {0}".format(str(e)))
+            return None
+        if not response or response.status_code not in [200, 206]:
+            self.logger.warning( "Received unexpected " + str(response) + " server {0}.".format(url))
+            return None
+        self.failure_count = 0
+        return response
+
+
+    def requests_post(self, url, auth = None, headers = None, data = None, params = None, cookies = None, files = None, ssl_verify= True, proxies = None):
+        if self.bearer != None:
+            headers['Authorization'] = 'Bearer '+ self.bearer
+        try:
+            response = requests.post(url, auth=auth, headers=headers, data=data, params = params, cookies = cookies, files = files, timeout=15, verify=ssl_verify, proxies = proxies)
+        except Exception as e:
+            self.failure_count += 1
+            if self.failure_count < self.max_failure_count:
+                self.logger.warn("Failure %d of %d" %(self.failure_count, self.max_failure_count))
+                self.logger.warn("Exception {0}".format(str(e)))
+                self.logger.warn("%s" %(traceback.format_exc().replace('\n',';')))
+            else:
+                self.logger.error("Failure %d of %d" %(self.failure_count, self.max_failure_count))
+                self.logger.error("Exception {0}".format(str(e)))
+            return None
+        if not response or response.status_code not in [200, 206]:
+            self.logger.warning( "Received unexpected " + str(response) + " server {0}.".format(url))
+            return None
+        self.failure_count = 0
+        return response
+
+    def bakeCookie(self, name, value):
+        cookie = Cookie(
+                version = 0,
+                name=name,
+                port=None,
+                port_specified=None,
+                domain='defensestorm.com',
+                domain_specified = None,
+                domain_initial_dot = None,
+                path = '/',
+                path_specified = None,
+                secure = False,
+                discard = False,
+                comment = 'key',
+                comment_url = None,
+                rest = None,
+                expires = None,
+                value = value)
+        return cookie
+
+    def searchTickets(self, slug_name = 'tasks', criteria = {}):
+        #headers = {'Content-Type': 'application/json', 'User-Agent':'curl/7.68.0'}
+        headers = {'Content-Type': 'application/json'}
+        ak_cookie = self.bakeCookie( name = "AK", value = self.config_get('grid','key'))
+        as_cookie = self.bakeCookie(name='AS', value = self.config_get('grid','secret'))
+        self.cookieJar.set_cookie(ak_cookie)
+        self.cookieJar.set_cookie(as_cookie)
+        response = self.requests_post(url = 'https://api.defensestorm.com/ticket/v1/ticket/task/search', headers = headers, cookies = self.cookieJar, data = json.dumps(criteria))
+        json_out = response.json()
+        if 'tickets' in json_out.keys():
+            return json_out['tickets']
+        else:
+            return None
+
+
+    def uploadFileToTicket(self, ticket_id, file_name, slug_name='tasks'):
+        #headers = {'Content-Type': 'multipart/form-data'}
+        ak_cookie = self.bakeCookie( name = "AK", value = self.config_get('grid','key'))
+        as_cookie = self.bakeCookie(name='AS', value = self.config_get('grid','secret'))
+        self.cookieJar.set_cookie(ak_cookie)
+        self.cookieJar.set_cookie(as_cookie)
+        try:
+            files = {'file': (file_name, open(file_name, 'rb'))}
+        except:
+            self.logger.error('ERROR: Failed opening file ' + file_name)
+            self.logger.error("%s" %(traceback.format_exc().replace('\n',';')))
+            return False
+        response = self.requests_post(url = 'https://api.defensestorm.com/ticket/v1/ticket/task/' + str(ticket_id) + '/file', cookies = self.cookieJar, files = files)
+        if response.status_code != 200:
+            self.logger.error('Failed to upload ' + file_name + ' to ticket ' + str(ticket_id))
+            return False
+        else:
+            self.logger.info('Uploaded ' + file_name + ' to ticket ' + str(ticket_id))
+            return True
 
