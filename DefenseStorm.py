@@ -49,6 +49,7 @@ class DefenseStorm(object):
         self.bearer = None
         self.failure_count = 0
         self.max_failure_count = 3
+        self.basic_auth = None
 
         try:
             if self.testing == False:
@@ -291,9 +292,22 @@ class DefenseStorm(object):
                 self.logger.error("Exception {0}".format(str(e)))
             return None
         if not response or response.status_code not in [200, 206]:
-            self.logger.warning( "Received unexpected " + str(response) + " server {0}.".format(url))
+            self.logger.warning( "Received unexpected " + str(response) + ':' + str(response.text)+ " server {0}.".format(url))
             return None
         self.failure_count = 0
+        return response
+
+    def requests_put(self, url, auth = None, headers = {}, data = None, params = None, cookies = None, ssl_verify= True, proxies = None, files = None, file_type = 'application/octet-stream'):
+        try:
+            response = requests.put(url, auth=self.basic_auth, headers=headers, data=data, params = params, cookies = cookies, timeout=15, verify=ssl_verify, proxies = proxies)
+        except Exception as e:
+            self.logger.error("%s" %(traceback.format_exc().replace('\n',';')))
+            self.logger.error("Failure in put: " + url)
+            self.logger.error("Exception {0}".format(str(e)))
+            return None
+        if not response or response.status_code not in [200, 206]:
+            self.logger.warning( "Received unexpected " + str(response) + " server {0}.".format(url))
+            return None
         return response
 
     def bakeCookie(self, name, value):
@@ -337,13 +351,24 @@ class DefenseStorm(object):
         as_cookie = self.bakeCookie(name='AS', value = self.config_get('grid','secret'))
         self.cookieJar.set_cookie(ak_cookie)
         self.cookieJar.set_cookie(as_cookie)
-        try:
-            files = {'file': (file_name, open(file_name, 'rb'))}
-        except:
-            self.logger.error('ERROR: Failed opening file ' + file_name)
-            self.logger.error("%s" %(traceback.format_exc().replace('\n',';')))
+
+        response = self.requests_get(url = 'https://api.defensestorm.com/ticket/v1/ticket/task/' + str(ticket_id) + '/file', cookies = self.cookieJar, params = {'contentType':'application/octet-stream'})
+        r_data = response.json()
+        if 'id' not in r_data.keys() or 'url' not in r_data.keys():
+            self.logger.error('Problem with File Upload Request')
             return False
-        response = self.requests_post(url = 'https://api.defensestorm.com/ticket/v1/ticket/task/' + str(ticket_id) + '/file', cookies = self.cookieJar, files = files)
+        headers = {'Content-Type': 'application/octet-stream', 'Content-Disposition':'attachment; filename="' + file_name + '"'}
+        response = self.requests_put(url = r_data['url'], headers =headers, data=open(file_name, 'rb') )
+
+        if response == None:
+            self.logger.error('Problem with File PUT: ' + r_data['url'])
+            return False
+
+        r_data['filename'] = file_name
+        r_data['size'] = 0
+
+        headers = {'Content-Type': 'application/json'}
+        response = self.requests_post(url = 'https://api.defensestorm.com/ticket/v1/ticket/task/' + str(ticket_id) + '/file', cookies = self.cookieJar, data = json.dumps(r_data), headers = headers)
         if response.status_code != 200:
             self.logger.error('Failed to upload ' + file_name + ' to ticket ' + str(ticket_id))
             return False
