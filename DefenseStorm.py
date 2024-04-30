@@ -43,25 +43,29 @@ class DefenseStorm(object):
 
         self.logger = logging.getLogger(self.integration)
         self.logger.setLevel(logging.getLevelName(log_level))
-        #Set handler to local syslog and facility local7
-        handler = logging.handlers.SysLogHandler('/dev/log', facility=22)
+        if self.send_syslog:
+            #Set handler to local syslog and facility local7
+            handler = logging.handlers.SysLogHandler('/dev/log', facility=22)
+        else:
+            handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
         handler.formatter = formatter
         self.logger.addHandler(handler)
 
-        self.event_logger = logging.getLogger(self.integration + 'events')
-        self.event_logger.setLevel(logging.getLevelName(log_level))
-        #Set handler to local syslog and facility local7
-        event_handler = logging.handlers.SysLogHandler('/dev/log', facility=23)
-        event_formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
-        event_handler.formatter = event_formatter
-        self.event_logger.addHandler(event_handler)
+        if not self.testing:
+            self.event_logger = logging.getLogger(self.integration + 'events')
+            self.event_logger.setLevel(logging.getLevelName(log_level))
+            #Set handler to local syslog and facility local6
+            event_handler = logging.handlers.SysLogHandler('/dev/log', facility=23)
+            event_formatter = logging.Formatter('DS-' + self.integration + '[%(process)s]: %(message)s')
+            event_handler.formatter = event_formatter
+            self.event_logger.addHandler(event_handler)
 
         if self.testing == False:
-            self.log('INFO', 'Starting run')
+            self.logger.info('Starting run')
         else:
             timestamp = str(calendar.timegm(time.gmtime()))
-            self.log('INFO', 'Starting run in test mode.  Data will be written locally to output.' + timestamp)
+            self.logger.info('Starting run in test mode.  Data will be written locally to output.' + timestamp)
             self.events_file = open('output.' + timestamp, 'w')
 
         if config_file == None:
@@ -70,7 +74,7 @@ class DefenseStorm(object):
             self.config_file = config_file
 
         self.config = configparser.ConfigParser()
-        self.log('INFO', 'Reading config file ' + self.config_file)
+        self.logger.info('Reading config file ' + self.config_file)
         try:
             self.config.read(self.config_file)
         except Exception as e:
@@ -86,7 +90,7 @@ class DefenseStorm(object):
     def __del__(self):
         end = time.time()
         secs = end - self.start
-        self.log('INFO', 'Completed run of %d events in: %0.2f seconds' %(self.count, secs))
+        self.logger.info('Completed run of %d events in: %0.2f seconds' %(self.count, secs))
 
     def writeEvent(self, message):
         if self.testing == True:
@@ -203,13 +207,13 @@ class DefenseStorm(object):
             try:
                 os.makedirs(state_dir)
             except OSError as e:
-                self.log('ERROR', "Failed to create state dir: %s" %state_dir)
+                self.logger.error("Failed to create state dir: %s" %state_dir)
                 return None
         try:
             with open(state_file_path, 'wb') as f:
                 pickle.dump(state, f, protocol=2)
         except:
-                self.log('ERROR', "Failed to save state to %s" %state_file_path)
+                self.logger.error("Failed to save state to %s" %state_file_path)
         return True
 
     def flatten_json(self,y):
